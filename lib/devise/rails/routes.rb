@@ -1,10 +1,28 @@
+require "active_support/core_ext/object/try"
+require "active_support/core_ext/hash/slice"
+
 module ActionDispatch::Routing
   class RouteSet #:nodoc:
     # Ensure Devise modules are included only after loading routes, because we
     # need devise_for mappings already declared to create filters and helpers.
     def finalize_with_devise!
-      finalize_without_devise!
-      Devise.configure_warden!
+      result = finalize_without_devise!
+
+      @devise_finalized ||= begin
+        if Devise.router_name.nil? && defined?(@devise_finalized) && self != Rails.application.try(:routes)
+          warn "[DEVISE] We have detected that you are using devise_for inside engine routes. " \
+            "In this case, you probably want to set Devise.router_name = MOUNT_POINT, where "   \
+            "MOUNT_POINT is a symbol representing where this engine will be mounted at. For "   \
+            "now Devise will default the mount point to :main_app. You can explicitly set it"   \
+            " to :main_app as well in case you want to keep the current behavior."
+        end
+
+        Devise.configure_warden!
+        Devise.regenerate_helpers!
+        true
+      end
+
+      result
     end
     alias_method_chain :finalize!, :devise
   end
@@ -25,42 +43,42 @@ module ActionDispatch::Routing
     # needed routes:
     #
     #  # Session routes for Authenticatable (default)
-    #       new_user_session GET  /users/sign_in                    {:controller=>"devise/sessions", :action=>"new"}
-    #           user_session POST /users/sign_in                    {:controller=>"devise/sessions", :action=>"create"}
-    #   destroy_user_session GET  /users/sign_out                   {:controller=>"devise/sessions", :action=>"destroy"}
+    #       new_user_session GET    /users/sign_in                    {:controller=>"devise/sessions", :action=>"new"}
+    #           user_session POST   /users/sign_in                    {:controller=>"devise/sessions", :action=>"create"}
+    #   destroy_user_session DELETE /users/sign_out                   {:controller=>"devise/sessions", :action=>"destroy"}
     #
     #  # Password routes for Recoverable, if User model has :recoverable configured
-    #      new_user_password GET  /users/password/new(.:format)     {:controller=>"devise/passwords", :action=>"new"}
-    #     edit_user_password GET  /users/password/edit(.:format)    {:controller=>"devise/passwords", :action=>"edit"}
-    #          user_password PUT  /users/password(.:format)         {:controller=>"devise/passwords", :action=>"update"}
-    #                        POST /users/password(.:format)         {:controller=>"devise/passwords", :action=>"create"}
+    #      new_user_password GET    /users/password/new(.:format)     {:controller=>"devise/passwords", :action=>"new"}
+    #     edit_user_password GET    /users/password/edit(.:format)    {:controller=>"devise/passwords", :action=>"edit"}
+    #          user_password PUT    /users/password(.:format)         {:controller=>"devise/passwords", :action=>"update"}
+    #                        POST   /users/password(.:format)         {:controller=>"devise/passwords", :action=>"create"}
     #
     #  # Confirmation routes for Confirmable, if User model has :confirmable configured
-    #  new_user_confirmation GET  /users/confirmation/new(.:format) {:controller=>"devise/confirmations", :action=>"new"}
-    #      user_confirmation GET  /users/confirmation(.:format)     {:controller=>"devise/confirmations", :action=>"show"}
-    #                        POST /users/confirmation(.:format)     {:controller=>"devise/confirmations", :action=>"create"}
+    #  new_user_confirmation GET    /users/confirmation/new(.:format) {:controller=>"devise/confirmations", :action=>"new"}
+    #      user_confirmation GET    /users/confirmation(.:format)     {:controller=>"devise/confirmations", :action=>"show"}
+    #                        POST   /users/confirmation(.:format)     {:controller=>"devise/confirmations", :action=>"create"}
     #
     # ==== Options
     #
     # You can configure your routes with some options:
     #
-    #  * :class_name => setup a different class to be looked up by devise,
-    #                   if it cannot be correctly find by the route name.
+    #  * :class_name => setup a different class to be looked up by devise, if it cannot be
+    #    properly found by the route name.
     #
     #      devise_for :users, :class_name => 'Account'
     #
     #  * :path => allows you to setup path name that will be used, as rails routes does.
-    #             The following route configuration would setup your route as /accounts instead of /users:
+    #    The following route configuration would setup your route as /accounts instead of /users:
     #
     #      devise_for :users, :path => 'accounts'
     #
-    #  * :singular => setup the singular name for the given resource. This is used as the instance variable name in
-    #                 controller, as the name in routes and the scope given to warden.
+    #  * :singular => setup the singular name for the given resource. This is used as the instance variable
+    #    name in controller, as the name in routes and the scope given to warden.
     #
     #      devise_for :users, :singular => :user
     #
     #  * :path_names => configure different path names to overwrite defaults :sign_in, :sign_out, :sign_up,
-    #                   :password, :confirmation, :unlock.
+    #    :password, :confirmation, :unlock.
     #
     #      devise_for :users, :path_names => { :sign_in => 'login', :sign_out => 'logout', :password => 'secret', :confirmation => 'verification' }
     #
@@ -69,6 +87,9 @@ module ActionDispatch::Routing
     #
     #      devise_for :users, :controllers => { :sessions => "users/sessions" }
     #
+    #  * :failure_app => a rack app which is invoked whenever there is a failure. Strings representing a given
+    #    are also allowed as parameter.
+    #
     #  * :sign_out_via => the HTTP method(s) accepted for the :sign_out action (default: :get),
     #    if you wish to restrict this to accept only :post or :delete requests you should do:
     #
@@ -76,15 +97,16 @@ module ActionDispatch::Routing
     #
     #    You need to make sure that your sign_out controls trigger a request with a matching HTTP method.
     #
-    #  * :module => the namespace to find controlers. By default, devise will access devise/sessions,
-    #    devise/registrations and so on. If you want to namespace all at once, use module:
+    #  * :module => the namespace to find controllers (default: "devise", thus
+    #    accessing devise/sessions, devise/registrations, and so on). If you want
+    #    to namespace all at once, use module:
     #
     #      devise_for :users, :module => "users"
     #
     #    Notice that whenever you use namespace in the router DSL, it automatically sets the module.
     #    So the following setup:
     #
-    #      namespace :publisher
+    #      namespace :publisher do
     #        devise_for :account
     #      end
     #
@@ -93,7 +115,7 @@ module ActionDispatch::Routing
     #
     #    Also pay attention that when you use a namespace it will affect all the helpers and methods for controllers
     #    and views. For example, using the above setup you'll end with following methods:
-    #    current_publisher_account, authenticate_publisher_account!, pusblisher_account_signed_in, etc.
+    #    current_publisher_account, authenticate_publisher_account!, publisher_account_signed_in, etc.
     #
     #  * :skip => tell which controller you want to skip routes from being created:
     #
@@ -103,11 +125,19 @@ module ActionDispatch::Routing
     #
     #      devise_for :users, :only => :sessions
     #
+    #  * :skip_helpers => skip generating Devise url helpers like new_session_path(@user).
+    #    This is useful to avoid conflicts with previous routes and is false by default.
+    #    It accepts true as option, meaning it will skip all the helpers for the controllers
+    #    given in :skip but it also accepts specific helpers to be skipped:
+    #
+    #      devise_for :users, :skip => [:registrations, :confirmations], :skip_helpers => true
+    #      devise_for :users, :skip_helpers => [:registrations, :confirmations]
+    #
     #  * :format => include "(.:format)" in the generated routes? true by default, set to false to disable:
     #
     #      devise_for :users, :format => false
     #
-    #  * :constraints => works the same as Rails' contraints
+    #  * :constraints => works the same as Rails' constraints
     #
     #  * :defaults => works the same as Rails' defaults
     #
@@ -119,15 +149,15 @@ module ActionDispatch::Routing
     #     devise_for :users
     #   end
     #
-    # However, since Devise uses the request path to retrieve the current user, it has one caveats.
-    # If you are using a dynamic segment, as below:
+    # However, since Devise uses the request path to retrieve the current user,
+    # this has one caveat: If you are using a dynamic segment, like so ...
     #
     #   scope ":locale" do
     #     devise_for :users
     #   end
     #
-    # You are required to configure default_url_options in your ApplicationController class level, so
-    # Devise can pick it:
+    # you are required to configure default_url_options in your
+    # ApplicationController class, so Devise can pick it:
     #
     #   class ApplicationController < ActionController::Base
     #     def self.default_url_options
@@ -153,13 +183,14 @@ module ActionDispatch::Routing
     #      end
     #    end
     #
-    # In order to get Devise to recognize the deactivate action, your devise_for entry should look like this,
+    # In order to get Devise to recognize the deactivate action, your devise_scope entry should look like this:
     #
-    #     devise_for :owners, :controllers => { :registrations => "registrations" } do
+    #     devise_scope :owner do
     #       post "deactivate", :to => "registrations#deactivate", :as => "deactivate_registration"
     #     end
     #
     def devise_for(*resources)
+      @devise_finalized = false
       options = resources.extract_options!
 
       options[:as]          ||= @scope[:as]     if @scope[:as].present?
@@ -168,8 +199,8 @@ module ActionDispatch::Routing
       options[:path_names]    = (@scope[:path_names] || {}).merge(options[:path_names] || {})
       options[:constraints]   = (@scope[:constraints] || {}).merge(options[:constraints] || {})
       options[:defaults]      = (@scope[:defaults] || {}).merge(options[:defaults] || {})
-
-      @scope[:options]        = (@scope[:options] || {}).merge({:format => false}) if options[:format] == false
+      options[:options]       = @scope[:options] || {}
+      options[:options][:format] = false if options[:format] == false
 
       resources.map!(&:to_sym)
 
@@ -188,30 +219,43 @@ module ActionDispatch::Routing
           raise_no_devise_method_error!(mapping.class_name)
         end
 
-        routes  = mapping.routes
-        if options.has_key?(:only)
-          routes  = Array(options.delete(:only)).map { |s| s.to_s.singularize.to_sym } & mapping.routes
-        end
-        routes -= Array(options.delete(:skip)).map { |s| s.to_s.singularize.to_sym }
+        routes  = mapping.used_routes
 
         devise_scope mapping.name do
-          yield if block_given?
-          with_devise_exclusive_scope mapping.fullpath, mapping.name, mapping.constraints, mapping.defaults do
+          if block_given?
+            ActiveSupport::Deprecation.warn "Passing a block to devise_for is deprecated. " \
+              "Please remove the block from devise_for (only the block, the call to " \
+              "devise_for must still exist) and call devise_scope :#{mapping.name} do ... end " \
+              "with the block instead", caller
+            yield
+          end
+
+          with_devise_exclusive_scope mapping.fullpath, mapping.name, options do
             routes.each { |mod| send("devise_#{mod}", mapping, mapping.controllers) }
           end
         end
       end
     end
 
-    # Allow you to add authentication request from the router:
+    # Allow you to add authentication request from the router.
+    # Takes an optional scope and block to provide constraints
+    # on the model instance itself.
     #
-    #   authenticate(:user) do
+    #   authenticate do
     #     resources :post
     #   end
     #
-    def authenticate(scope)
+    #   authenticate(:admin) do
+    #     resources :users
+    #   end
+    #
+    #   authenticate :user, lambda {|u| u.role == "admin"} do
+    #     root :to => "admin/dashboard#show"
+    #   end
+    #
+    def authenticate(scope=nil, block=nil)
       constraint = lambda do |request|
-        request.env["warden"].authenticate!(:scope => scope)
+        request.env["warden"].authenticate!(:scope => scope) && (block.nil? || block.call(request.env["warden"].user(scope)))
       end
 
       constraints(constraint) do
@@ -220,7 +264,8 @@ module ActionDispatch::Routing
     end
 
     # Allow you to route based on whether a scope is authenticated. You
-    # can optionally specify which scope.
+    # can optionally specify which scope and a block. The block accepts
+    # a model and allows extra constraints to be done on the instance.
     #
     #   authenticated :admin do
     #     root :to => 'admin/dashboard#show'
@@ -230,11 +275,15 @@ module ActionDispatch::Routing
     #     root :to => 'dashboard#show'
     #   end
     #
+    #   authenticated :user, lambda {|u| u.role == "admin"} do
+    #     root :to => "admin/dashboard#show"
+    #   end
+    #
     #   root :to => 'landing#show'
     #
-    def authenticated(scope=nil)
+    def authenticated(scope=nil, block=nil)
       constraint = lambda do |request|
-        request.env["warden"].authenticate? :scope => scope
+        request.env["warden"].authenticate?(:scope => scope) && (block.nil? || block.call(request.env["warden"].user(scope)))
       end
 
       constraints(constraint) do
@@ -274,6 +323,17 @@ module ActionDispatch::Routing
     # Notice you cannot have two scopes mapping to the same URL. And remember, if
     # you try to access a devise controller without specifying a scope, it will
     # raise ActionNotFound error.
+    #
+    # Also be aware of that 'devise_scope' and 'as' use the singular form of the
+    # noun where other devise route commands expect the plural form. This would be a
+    # good and working example.
+    #
+    #  devise_scope :user do
+    #    match "/some/route" => "some_devise_controller"
+    #  end
+    #  devise_for :users
+    #
+    # Notice and be aware of the differences above between :user and :users
     def devise_scope(scope)
       constraint = lambda do |request|
         request.env["devise.mapping"] = Devise.mappings[scope]
@@ -319,34 +379,62 @@ module ActionDispatch::Routing
           :cancel => mapping.path_names[:cancel]
         }
 
-        resource :registration, :except => :show, :path => mapping.path_names[:registration],
-                 :path_names => path_names, :controller => controllers[:registrations] do
+        options = {
+          :only => [:new, :create, :edit, :update, :destroy],
+          :path => mapping.path_names[:registration],
+          :path_names => path_names,
+          :controller => controllers[:registrations]
+        }
+
+        resource :registration, options do
           get :cancel
         end
       end
 
       def devise_omniauth_callback(mapping, controllers) #:nodoc:
         path, @scope[:path] = @scope[:path], nil
-        path_prefix = "/#{mapping.path}/auth".squeeze("/")
+        path_prefix = Devise.omniauth_path_prefix || "/#{mapping.path}/auth".squeeze("/")
+        set_omniauth_path_prefix!(path_prefix)
 
-        if ::OmniAuth.config.path_prefix && ::OmniAuth.config.path_prefix != path_prefix
-          warn "[DEVISE] You can only add :omniauthable behavior to one model."
-        else
-          ::OmniAuth.config.path_prefix = path_prefix
-        end
+        providers = Regexp.union(mapping.to.omniauth_providers.map(&:to_s))
 
-        match "#{path_prefix}/:action/callback", :action => Regexp.union(mapping.to.omniauth_providers.map(&:to_s)),
-          :to => controllers[:omniauth_callbacks], :as => :omniauth_callback
+        match "#{path_prefix}/:provider",
+          :constraints => { :provider => providers },
+          :to => "#{controllers[:omniauth_callbacks]}#passthru",
+          :as => :omniauth_authorize
+
+        match "#{path_prefix}/:action/callback",
+          :constraints => { :action => providers },
+          :to => controllers[:omniauth_callbacks],
+          :as => :omniauth_callback
       ensure
         @scope[:path] = path
       end
 
-      def with_devise_exclusive_scope(new_path, new_as, new_constraints, new_defaults) #:nodoc:
-        old_as, old_path, old_module, old_constraints, old_defaults = @scope[:as], @scope[:path], @scope[:module], @scope[:constraints], @scope[:defaults]
-        @scope[:as], @scope[:path], @scope[:module], @scope[:constraints], @scope[:defaults] = new_as, new_path, nil, new_constraints, new_defaults
+      DEVISE_SCOPE_KEYS = [:as, :path, :module, :constraints, :defaults, :options]
+
+      def with_devise_exclusive_scope(new_path, new_as, options) #:nodoc:
+        old = {}
+        DEVISE_SCOPE_KEYS.each { |k| old[k] = @scope[k] }
+
+        new = { :as => new_as, :path => new_path, :module => nil }
+        new.merge!(options.slice(:constraints, :defaults, :options))
+
+        @scope.merge!(new)
         yield
       ensure
-        @scope[:as], @scope[:path], @scope[:module], @scope[:constraints], @scope[:defaults] = old_as, old_path, old_module, old_constraints, old_defaults
+        @scope.merge!(old)
+      end
+
+      def set_omniauth_path_prefix!(path_prefix) #:nodoc:
+        if ::OmniAuth.config.path_prefix && ::OmniAuth.config.path_prefix != path_prefix
+          raise "Wrong OmniAuth configuration. If you are getting this exception, it means that either:\n\n" \
+            "1) You are manually setting OmniAuth.config.path_prefix and it doesn't match the Devise one\n" \
+            "2) You are setting :omniauthable in more than one model\n" \
+            "3) You changed your Devise routes/OmniAuth setting and haven't restarted your server"
+        else
+          ::OmniAuth.config.path_prefix = path_prefix
+        end
       end
 
       def raise_no_devise_method_error!(klass) #:nodoc:

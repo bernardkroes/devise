@@ -21,15 +21,10 @@ module Devise
     #     used to calculate the expires time for the cookie created to remember
     #     the user. By default remember_for is 2.weeks.
     #
-    #   * +remember_across_browsers+: if a valid remember token can be re-used
-    #     between multiple browsers. By default remember_across_browsers is true
-    #     and cannot be turned off if you are using password salt instead of remember
-    #     token.
-    #
     #   * +extend_remember_period+: if true, extends the user's remember period
     #     when remembered via cookie. False by default.
     #
-    #   * +cookie_options+: configuration options passed to the created cookie.
+    #   * +rememberable_options+: configuration options passed to the created cookie.
     #
     # == Examples
     #
@@ -46,10 +41,14 @@ module Devise
 
       attr_accessor :remember_me, :extend_remember_period
 
+      def self.required_fields(klass)
+        [:remember_created_at]
+      end
+
       # Generate a new remember token and save the record without validations
       # unless remember_across_browsers is true and the user already has a valid token.
       def remember_me!(extend_period=false)
-        self.remember_token = self.class.remember_token if respond_to?(:remember_token) && generate_remember_token?
+        self.remember_token = self.class.remember_token if generate_remember_token?
         self.remember_created_at = Time.now.utc if generate_remember_timestamp?(extend_period)
         save(:validate => false)
       end
@@ -57,11 +56,10 @@ module Devise
       # If the record is persisted, remove the remember token (but only if
       # it exists), and save the record without validations.
       def forget_me!
-        if persisted?
-          self.remember_token = nil if respond_to?(:remember_token=)
-          self.remember_created_at = nil
-          save(:validate => false)
-        end
+        return unless persisted?
+        self.remember_token = nil if respond_to?(:remember_token=)
+        self.remember_created_at = nil
+        save(:validate => false)
       end
 
       # Remember token should be expired if expiration time not overpass now.
@@ -80,22 +78,21 @@ module Devise
         elsif respond_to?(:authenticatable_salt) && (salt = authenticatable_salt)
           salt
         else
-          raise "The #{self.class.name} class does not respond to remember_token and " <<
-            "authenticatable_salt returns nil. In order to use rememberable, you must " <<
-            "add a remember_token field to your model or ensure a password is always set."
+          raise "authenticable_salt returned nil for the #{self.class.name} model. " \
+            "In order to use rememberable, you must ensure a password is always set " \
+            "or have a remember_token column in your model or implement your own " \
+            "rememberable_value in the model with custom logic."
         end
       end
 
-      def cookie_options
-        self.class.cookie_options
+      def rememberable_options
+        self.class.rememberable_options
       end
 
     protected
 
-      # Generate a token unless remember_across_browsers is true and there is
-      # an existing remember_token or the existing remember_token has expried.
       def generate_remember_token? #:nodoc:
-        !(self.class.remember_across_browsers && remember_token) || remember_expired?
+        respond_to?(:remember_token) && remember_expired?
       end
 
       # Generate a timestamp if extend_remember_period is true, if no remember_token
@@ -117,12 +114,11 @@ module Devise
         end
 
         # Generate a token checking if one does not already exist in the database.
-        def remember_token
+        def remember_token #:nodoc:
           generate_token(:remember_token)
         end
 
-        Devise::Models.config(self, :remember_for, :remember_across_browsers,
-          :extend_remember_period, :cookie_options)
+        Devise::Models.config(self, :remember_for, :extend_remember_period, :rememberable_options)
       end
     end
   end

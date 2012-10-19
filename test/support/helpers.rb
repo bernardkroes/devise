@@ -25,8 +25,8 @@ class ActiveSupport::TestCase
   def valid_attributes(attributes={})
     { :username => "usertest",
       :email => generate_unique_email,
-      :password => '123456',
-      :password_confirmation => '123456' }.update(attributes)
+      :password => '12345678',
+      :password_confirmation => '12345678' }.update(attributes)
   end
 
   def new_user(attributes={})
@@ -51,10 +51,41 @@ class ActiveSupport::TestCase
       old_values[key] = object.send key
       object.send :"#{key}=", value
     end
+    clear_cached_variables(new_values)
     yield
   ensure
+    clear_cached_variables(new_values)
     old_values.each do |key, value|
       object.send :"#{key}=", value
+    end
+  end
+
+  def clear_cached_variables(options)
+    if options.key?(:case_insensitive_keys) || options.key?(:strip_whitespace_keys)
+      Devise.mappings.each do |_, mapping|
+        mapping.to.instance_variable_set(:@devise_param_filter, nil)
+      end
+    end
+  end
+
+  def swap_module_method_existence(klass, method)
+    klass.module_eval %Q[
+      class << self
+        alias #{method}_referenced #{method}
+        undef #{method}
+      end
+    ]
+
+    begin
+      yield if block_given?
+    ensure
+
+      klass.module_eval %Q[
+        class << self
+          alias #{method} #{method}_referenced
+          undef #{method}_referenced
+        end
+      ]
     end
   end
 end

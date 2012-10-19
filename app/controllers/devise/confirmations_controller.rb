@@ -1,21 +1,17 @@
-class Devise::ConfirmationsController < ApplicationController
-  include Devise::Controllers::InternalHelpers
-
+class Devise::ConfirmationsController < DeviseController
   # GET /resource/confirmation/new
   def new
     build_resource({})
-    render_with_scope :new
   end
 
   # POST /resource/confirmation
   def create
-    self.resource = resource_class.send_confirmation_instructions(params[resource_name])
+    self.resource = resource_class.send_confirmation_instructions(resource_params)
 
-    if successful_and_sane?(resource)
-      set_flash_message(:notice, :send_instructions) if is_navigational_format?
+    if successfully_sent?(resource)
       respond_with({}, :location => after_resending_confirmation_instructions_path_for(resource_name))
     else
-      respond_with_navigational(resource){ render_with_scope :new }
+      respond_with(resource)
     end
   end
 
@@ -28,7 +24,7 @@ class Devise::ConfirmationsController < ApplicationController
       sign_in(resource_name, resource)
       respond_with_navigational(resource){ redirect_to after_confirmation_path_for(resource_name, resource) }
     else
-      respond_with_navigational(resource.errors, :status => :unprocessable_entity){ render_with_scope :new }
+      respond_with_navigational(resource.errors, :status => :unprocessable_entity){ render :new }
     end
   end
 
@@ -41,7 +37,7 @@ class Devise::ConfirmationsController < ApplicationController
 
     # The path used after confirmation.
     def after_confirmation_path_for(resource_name, resource)
-      redirect_location(resource_name, resource)
+      after_sign_in_path_for(resource)
     end
 
 end

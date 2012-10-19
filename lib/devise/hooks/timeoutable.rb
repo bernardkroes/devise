@@ -5,7 +5,7 @@
 # verify timeout in the following request.
 Warden::Manager.after_set_user do |record, warden, options|
   scope = options[:scope]
-  env = warden.request.env
+  env   = warden.request.env
 
   if record && record.respond_to?(:timedout?) && warden.authenticated?(scope) && options[:store] != false
     last_request_at = warden.session(scope)['last_request_at']

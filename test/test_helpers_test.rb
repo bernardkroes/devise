@@ -9,7 +9,7 @@ class TestHelpersTest < ActionController::TestCase
       self.status = 306
     end
   end
-  
+
   test "redirects if attempting to access a page unauthenticated" do
     get :index
     assert_redirected_to new_user_session_path
@@ -17,7 +17,7 @@ class TestHelpersTest < ActionController::TestCase
   end
 
   test "redirects if attempting to access a page with an unconfirmed account" do
-    swap Devise, :confirm_within => 0 do
+    swap Devise, :allow_unconfirmed_access_for => 0 do
       user = create_user
       assert !user.active_for_authentication?
 
@@ -28,7 +28,7 @@ class TestHelpersTest < ActionController::TestCase
   end
 
   test "returns nil if accessing current_user with an unconfirmed account" do
-    swap Devise, :confirm_within => 0 do
+    swap Devise, :allow_unconfirmed_access_for => 0 do
       user = create_user
       assert !user.active_for_authentication?
 
@@ -39,6 +39,18 @@ class TestHelpersTest < ActionController::TestCase
   end
 
   test "does not redirect with valid user" do
+    user = create_user
+    user.confirm!
+
+    sign_in user
+    get :index
+    assert_response :success
+  end
+
+  test "does not redirect with valid user after failed first attempt" do
+    get :index
+    assert_response :redirect
+
     user = create_user
     user.confirm!
 
@@ -58,7 +70,7 @@ class TestHelpersTest < ActionController::TestCase
     get :index
     assert_redirected_to new_user_session_path
   end
-  
+
   test "respects custom failure app" do
     begin
       Devise.warden_config.failure_app = CustomFailureApp
@@ -67,6 +79,11 @@ class TestHelpersTest < ActionController::TestCase
     ensure
       Devise.warden_config.failure_app = Devise::FailureApp
     end
+  end
+
+  test "returns the body of a failure app" do
+    get :index
+    assert_equal response.body, "<html><body>You are being <a href=\"http://test.host/users/sign_in\">redirected</a>.</body></html>"
   end
 
   test "defined Warden after_authentication callback should not be called when sign_in is called" do

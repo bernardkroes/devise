@@ -1,6 +1,8 @@
 module Devise
   module Generators
     class DeviseGenerator < Rails::Generators::NamedBase
+      include Rails::Generators::ResourceHelpers
+
       namespace "devise"
       source_root File.expand_path("../templates", __FILE__)
 
@@ -9,9 +11,12 @@ module Devise
 
       hook_for :orm
 
+      class_option :routes, :desc => "Generate routes", :type => :boolean, :default => true
+
       def add_devise_routes
         devise_route  = "devise_for :#{plural_name}"
-        devise_route += %Q(, :class_name => "#{class_name}") if class_name.include?("::")
+        devise_route << %Q(, :class_name => "#{class_name}") if class_name.include?("::")
+        devise_route << %Q(, :skip => :all) unless options.routes?
         route devise_route
       end
     end

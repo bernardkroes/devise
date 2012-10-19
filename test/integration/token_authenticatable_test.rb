@@ -13,8 +13,19 @@ class TokenAuthenticationTest < ActionController::IntegrationTest
     end
   end
 
+  test 'authenticate with valid authentication token key and value through params, when params with the same key as scope exist' do
+    swap Devise, :token_authentication_key => :secret_token do
+      user = create_user_with_authentication_token
+      post exhibit_user_path(user), Devise.token_authentication_key => user.authentication_token, :user => { :some => "data" }
+
+      assert_response :success
+      assert_contain 'User is authenticated'
+      assert warden.authenticated?(:user)
+    end
+  end
+
   test 'authenticate with valid authentication token key but does not store if stateless' do
-    swap Devise, :token_authentication_key => :secret_token, :stateless_token => true do
+    swap Devise, :token_authentication_key => :secret_token, :skip_session_storage => [:token_auth] do
       sign_in_as_new_user_with_token
       assert warden.authenticated?(:user)
 
@@ -77,7 +88,7 @@ class TokenAuthenticationTest < ActionController::IntegrationTest
   end
 
   test 'authenticate with valid authentication token key and do not store if stateless and timeoutable are enabled' do
-    swap Devise, :token_authentication_key => :secret_token, :stateless_token => true, :timeout_in => (0.1).second do
+    swap Devise, :token_authentication_key => :secret_token, :skip_session_storage => [:token_auth], :timeout_in => (0.1).second do
       user = sign_in_as_new_user_with_token
       assert warden.authenticated?(:user)
 
@@ -86,6 +97,19 @@ class TokenAuthenticationTest < ActionController::IntegrationTest
 
       get_users_path_as_existing_user(user)
       assert warden.authenticated?(:user)
+    end
+  end
+
+  test 'should reset token and not authenticate when expire_auth_token_on_timeout is set to true, timeoutable is enabled and we have a timed out session' do
+    swap Devise, :token_authentication_key => :secret_token, :expire_auth_token_on_timeout => true, :timeout_in => (-1).minute do
+      user = sign_in_as_new_user_with_token
+      assert warden.authenticated?(:user)
+      token = user.authentication_token
+
+      get_users_path_as_existing_user(user)
+      assert_not warden.authenticated?(:user)
+      user.reload
+      assert_not_equal token, user.authentication_token
     end
   end
 
@@ -101,7 +125,7 @@ class TokenAuthenticationTest < ActionController::IntegrationTest
 
       assert_not_equal user1, user2
       visit users_path(Devise.token_authentication_key.to_s + '[$ne]' => user1.authentication_token)
-      assert_nil warden.user(:user) 
+      assert_nil warden.user(:user)
     end
   end
 
@@ -114,7 +138,7 @@ class TokenAuthenticationTest < ActionController::IntegrationTest
       options[:auth_token]     ||= user.authentication_token
 
       if options[:http_auth]
-        header = "Basic #{ActiveSupport::Base64.encode64("#{VALID_AUTHENTICATION_TOKEN}:X")}"
+        header = "Basic #{Base64.encode64("#{VALID_AUTHENTICATION_TOKEN}:X")}"
         get users_path(:format => :xml), {}, "HTTP_AUTHORIZATION" => header
       else
         visit users_path(options[:auth_token_key].to_sym => options[:auth_token])

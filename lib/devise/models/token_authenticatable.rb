@@ -18,17 +18,30 @@ module Devise
     # If you want to delete the token after it is used, you can do so in the
     # after_token_authentication callback.
     #
+    # == APIs
+    #
+    # If you are using token authentication with APIs and using trackable. Every
+    # request will be considered as a new sign in (since there is no session in
+    # APIs). You can disable this by creating a before filter as follow:
+    #
+    #   before_filter :skip_trackable
+    #
+    #   def skip_trackable
+    #     request.env['devise.skip_trackable'] = true
+    #   end
+    #
     # == Options
     #
     # TokenAuthenticatable adds the following options to devise_for:
     #
     #   * +token_authentication_key+: Defines name of the authentication token params key. E.g. /users/sign_in?some_key=...
     #
-    #   * +stateless_token+: By default, when you sign up with a token, Devise will store the user in session
-    #     as any other authentication strategy. You can set stateless_token to true to avoid this.
-    #
     module TokenAuthenticatable
       extend ActiveSupport::Concern
+
+      def self.required_fields(klass)
+        [:authentication_token]
+      end
 
       # Generate new authentication token (a.k.a. "single access token").
       def reset_authentication_token
@@ -55,6 +68,10 @@ module Devise
       def after_token_authentication
       end
 
+      def expire_auth_token_on_timeout
+        self.class.expire_auth_token_on_timeout
+      end
+
       module ClassMethods
         def find_for_token_authentication(conditions)
           find_for_authentication(:authentication_token => conditions[token_authentication_key])
@@ -65,7 +82,7 @@ module Devise
           generate_token(:authentication_token)
         end
 
-        ::Devise::Models.config(self, :token_authentication_key, :stateless_token)
+        Devise::Models.config(self, :token_authentication_key, :expire_auth_token_on_timeout)
       end
     end
   end

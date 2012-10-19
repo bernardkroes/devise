@@ -11,24 +11,23 @@ module Devise
     # a password, you can pass "X" as password and it will simply be ignored.
     class TokenAuthenticatable < Authenticatable
       def store?
-        !mapping.to.stateless_token
+        super && !mapping.to.skip_session_storage.include?(:token_auth)
       end
 
       def authenticate!
         resource = mapping.to.find_for_token_authentication(authentication_hash)
+        return fail(:invalid_token) unless resource
 
         if validate(resource)
           resource.after_token_authentication
           success!(resource)
-        elsif !halted?
-          fail(:invalid_token)
         end
       end
 
     private
 
-      # TokenAuthenticatable request is valid for any controller and any verb.
-      def valid_request?
+      # Token Authenticatable can be authenticated with params in any controller and any verb.
+      def valid_params_request?
         true
       end
 
@@ -39,7 +38,11 @@ module Devise
 
       # Try both scoped and non scoped keys.
       def params_auth_hash
-        params[scope] || params
+        if params[scope].kind_of?(Hash) && params[scope].has_key?(authentication_keys.first)
+          params[scope]
+        else
+          params
+        end
       end
 
       # Overwrite authentication keys to use token_authentication_key.

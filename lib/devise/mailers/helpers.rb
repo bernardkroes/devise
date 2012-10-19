@@ -10,11 +10,6 @@ module Devise
 
       protected
 
-      def setup_mail(*args)
-        ActiveSupport::Deprecation.warn "setup_mail is deprecated, please use devise_mail instead", caller
-        devise_mail(*args)
-      end
-
       # Configure default email options
       def devise_mail(record, action)
         initialize_from_record(record)
@@ -33,8 +28,9 @@ module Devise
       def headers_for(action)
         headers = {
           :subject       => translate(devise_mapping, action),
-          :from          => mailer_sender(devise_mapping),
           :to            => resource.email,
+          :from          => mailer_sender(devise_mapping),
+          :reply_to      => mailer_reply_to(devise_mapping),
           :template_path => template_paths
         }
 
@@ -42,15 +38,21 @@ module Devise
           headers.merge!(resource.headers_for(action))
         end
 
-        unless headers.key?(:reply_to)
-          headers[:reply_to] = headers[:from]
-        end
-
         headers
       end
 
-      def mailer_sender(mapping)
-        if Devise.mailer_sender.is_a?(Proc)
+      def mailer_reply_to(mapping)
+        mailer_sender(mapping, :reply_to)
+      end
+      
+      def mailer_from(mapping)
+        mailer_sender(mapping, :from)
+      end
+
+      def mailer_sender(mapping, sender = :from)
+        if default_params[sender].present?
+          default_params[sender]
+        elsif Devise.mailer_sender.is_a?(Proc)
           Devise.mailer_sender.call(mapping.name)
         else
           Devise.mailer_sender

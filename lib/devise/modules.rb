@@ -5,12 +5,11 @@ Devise.with_options :model => true do |d|
   d.with_options :strategy => true do |s|
     routes = [nil, :new, :destroy]
     s.add_module :database_authenticatable, :controller => :sessions, :route => { :session => routes }
-    s.add_module :token_authenticatable
-    s.add_module :rememberable
+    s.add_module :token_authenticatable,    :controller => :sessions, :route => { :session => routes }, :no_input => true
+    s.add_module :rememberable, :no_input => true
   end
 
   # Other authentications
-  d.add_module :encryptable
   d.add_module :omniauthable, :controller => :omniauth_callbacks,  :route => :omniauth_callback
 
   # Misc after

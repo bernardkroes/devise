@@ -128,6 +128,10 @@ class CustomizedRoutingTest < ActionController::TestCase
     end
   end
 
+  test 'subdomain admin' do
+    assert_recognizes({"host"=>"sub.example.com", :controller => 'devise/sessions', :action => 'new'}, {:host => "sub.example.com", :path => '/sub_admin/sign_in', :method => :get})
+  end
+
   test 'does only map reader password' do
     assert_raise ActionController::RoutingError do
       assert_recognizes({:controller => 'devise/sessions', :action => 'new'}, 'reader/sessions/new')
@@ -224,6 +228,10 @@ class CustomizedRoutingTest < ActionController::TestCase
     assert_raise ActionController::RoutingError do
       assert_recognizes({:controller => 'devise/unlocks', :action => 'show'}, {:path => '/htmlonly_users/unlock.xml', :method => :get})
     end
+  end
+
+  test 'map with format false is not permanent' do
+    assert_equal "/set.xml", @routes.url_helpers.set_path(:xml)
   end
 end
 

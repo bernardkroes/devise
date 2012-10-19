@@ -97,7 +97,7 @@ class RecoverableTest < ActiveSupport::TestCase
   test 'should reset reset_password_token before send the reset instructions email' do
     user = create_user
     token = user.reset_password_token
-    reset_password_user = User.send_reset_password_instructions(:email => user.email)
+    User.send_reset_password_instructions(:email => user.email)
     assert_not_equal token, user.reload.reset_password_token
   end
 
@@ -142,7 +142,7 @@ class RecoverableTest < ActiveSupport::TestCase
     old_password = user.password
     user.send :generate_reset_password_token!
 
-    reset_password_user = User.reset_password_by_token(
+    User.reset_password_by_token(
       :reset_password_token => user.reset_password_token,
       :password => 'new_password',
       :password_confirmation => 'new_password'
@@ -196,30 +196,10 @@ class RecoverableTest < ActiveSupport::TestCase
     end
   end
 
-  test 'should save the model when the reset_password_sent_at doesnt exist' do
-    user = create_user
-    def user.respond_to?(meth, *)
-      if meth == :reset_password_sent_at=
-        false
-      else
-        super
-      end
-    end
-    user.send_reset_password_instructions
-    user.reload
-    assert_not_nil user.reset_password_token
+  test 'required_fields should contain the fields that Devise uses' do
+    assert_same_content Devise::Models::Recoverable.required_fields(User), [
+      :reset_password_sent_at,
+      :reset_password_token
+    ]
   end
-
-  test 'should have valid period if does not respond to reset_password_sent_at' do
-    user = create_user
-    def user.respond_to?(meth, *)
-      if meth == :reset_password_sent_at
-        false
-      else
-        super
-      end
-    end
-    assert user.reset_password_period_valid?
-  end
-
 end

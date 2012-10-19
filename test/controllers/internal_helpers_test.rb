@@ -1,7 +1,6 @@
 require 'test_helper'
 
-class MyController < ApplicationController
-  include Devise::Controllers::InternalHelpers
+class MyController < DeviseController
 end
 
 class HelpersTest < ActionController::TestCase
@@ -34,6 +33,13 @@ class HelpersTest < ActionController::TestCase
     assert_equal user, @controller.instance_variable_get(:@user)
   end
 
+  test 'get resource params from request params using resource name as key' do
+    user_params = {'name' => 'Shirley Templar'}
+    @controller.stubs(:params).returns(HashWithIndifferentAccess.new({'user' => user_params}))
+
+    assert_equal user_params, @controller.resource_params
+  end
+
   test 'resources methods are not controller actions' do
     assert @controller.class.action_methods.empty?
   end
@@ -45,10 +51,12 @@ class HelpersTest < ActionController::TestCase
     @controller.send :require_no_authentication
   end
 
-  test 'require no authentication skips if no inputs are available' do
+  test 'require no authentication only checks if already authenticated if no inputs strategies are available' do
     Devise.mappings[:user].expects(:no_input_strategies).returns([])
     @mock_warden.expects(:authenticate?).never
-    @controller.expects(:redirect_to).never
+    @mock_warden.expects(:authenticated?).with(:user).once.returns(true)
+    @mock_warden.expects(:user).with(:user).returns(User.new)
+    @controller.expects(:redirect_to).with(root_path)
     @controller.send :require_no_authentication
   end
 
@@ -70,19 +78,21 @@ class HelpersTest < ActionController::TestCase
   end
 
   test 'does not issue blank flash messages' do
-    MyController.send(:public, :set_flash_message)
     I18n.stubs(:t).returns('   ')
-    @controller.set_flash_message :notice, :send_instructions
+    @controller.send :set_flash_message, :notice, :send_instructions
     assert flash[:notice].nil?
-    MyController.send(:protected, :set_flash_message)
   end
 
   test 'issues non-blank flash messages normally' do
-    MyController.send(:public, :set_flash_message)
     I18n.stubs(:t).returns('non-blank')
-    @controller.set_flash_message :notice, :send_instructions
-    assert flash[:notice] == 'non-blank'
-    MyController.send(:protected, :set_flash_message)
+    @controller.send :set_flash_message, :notice, :send_instructions
+    assert_equal 'non-blank', flash[:notice]
+  end
+
+  test 'uses custom i18n options' do
+    @controller.stubs(:devise_i18n_options).returns(:default => "devise custom options")
+    @controller.send :set_flash_message, :notice, :invalid_i18n_messagesend_instructions
+    assert_equal 'devise custom options', flash[:notice]
   end
 
   test 'navigational_formats not returning a wild card' do

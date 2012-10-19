@@ -13,7 +13,7 @@ class RegistrationTest < ActionController::IntegrationTest
     fill_in 'password confirmation', :with => 'new_user123'
     click_button 'Sign up'
 
-    assert_contain 'Welcome! You have signed up successfully.'
+    assert_contain 'You have signed up successfully'
     assert warden.authenticated?(:admin)
     assert_current_url "/admin_area/home"
 
@@ -36,15 +36,21 @@ class RegistrationTest < ActionController::IntegrationTest
     assert_current_url "/?custom=1"
   end
 
-  test 'a guest user should be able to sign up successfully and be blocked by confirmation' do
+  def user_sign_up
+    ActionMailer::Base.deliveries.clear
+
     get new_user_registration_path
 
     fill_in 'email', :with => 'new_user@test.com'
     fill_in 'password', :with => 'new_user123'
     fill_in 'password confirmation', :with => 'new_user123'
     click_button 'Sign up'
+  end
 
-    assert_contain 'You have signed up successfully. However, we could not sign you in because your account is unconfirmed.'
+  test 'a guest user should be able to sign up successfully and be blocked by confirmation' do
+    user_sign_up
+
+    assert_contain 'A message with a confirmation link has been sent to your email address. Please open the link to activate your account.'
     assert_not_contain 'You have to confirm your account before continuing'
     assert_current_url "/"
 
@@ -53,6 +59,17 @@ class RegistrationTest < ActionController::IntegrationTest
     user = User.last :order => "id"
     assert_equal user.email, 'new_user@test.com'
     assert_not user.confirmed?
+  end
+
+  test 'a guest user should receive the confirmation instructions from the default mailer' do
+    user_sign_up
+    assert_equal ['please-change-me@config-initializers-devise.com'], ActionMailer::Base.deliveries.first.from
+  end
+
+  test 'a guest user should receive the confirmation instructions from a custom mailer' do
+    User.any_instance.stubs(:devise_mailer).returns(Users::Mailer)
+    user_sign_up
+    assert_equal ['custom@example.com'], ActionMailer::Base.deliveries.first.from
   end
 
   test 'a guest user should be blocked by confirmation and redirected to a custom path' do
@@ -69,6 +86,10 @@ class RegistrationTest < ActionController::IntegrationTest
   end
 
   test 'a guest user cannot sign up with invalid information' do
+    # Dirty tracking behavior prevents email validations from being applied:
+    #    https://github.com/mongoid/mongoid/issues/756
+    (pending "Fails on Mongoid < 2.1"; break) if defined?(Mongoid) && Mongoid::VERSION.to_f < 2.1
+
     get new_user_registration_path
 
     fill_in 'email', :with => 'invalid_email'
@@ -87,6 +108,10 @@ class RegistrationTest < ActionController::IntegrationTest
   end
 
   test 'a guest should not sign up with email/password that already exists' do
+    # Dirty tracking behavior prevents email validations from being applied:
+    #    https://github.com/mongoid/mongoid/issues/756
+    (pending "Fails on Mongoid < 2.1"; break) if defined?(Mongoid) && Mongoid::VERSION.to_f < 2.1
+
     user = create_user
     get new_user_registration_path
 
@@ -119,7 +144,7 @@ class RegistrationTest < ActionController::IntegrationTest
     get edit_user_registration_path
 
     fill_in 'email', :with => 'user.new@example.com'
-    fill_in 'current password', :with => '123456'
+    fill_in 'current password', :with => '12345678'
     click_button 'Update'
 
     assert_current_url '/'
@@ -132,9 +157,9 @@ class RegistrationTest < ActionController::IntegrationTest
     sign_in_as_user
     get edit_user_registration_path
 
-    fill_in 'password', :with => '12345678'
-    fill_in 'password confirmation', :with => '12345678'
-    fill_in 'current password', :with => '123456'
+    fill_in 'password', :with => '1234567890'
+    fill_in 'password confirmation', :with => '1234567890'
+    fill_in 'current password', :with => '12345678'
     click_button 'Update'
 
     assert_contain 'You updated your account successfully.'
@@ -161,15 +186,15 @@ class RegistrationTest < ActionController::IntegrationTest
     sign_in_as_user
     get edit_user_registration_path
 
-    fill_in 'password', :with => 'pas123'
-    fill_in 'password confirmation', :with => 'pas123'
-    fill_in 'current password', :with => '123456'
+    fill_in 'password', :with => 'pass1234'
+    fill_in 'password confirmation', :with => 'pass1234'
+    fill_in 'current password', :with => '12345678'
     click_button 'Update'
 
     assert_current_url '/'
     assert_contain 'You updated your account successfully.'
 
-    assert User.first.valid_password?('pas123')
+    assert User.first.valid_password?('pass1234')
   end
 
   test 'a signed in user should not be able to edit his password with invalid confirmation' do
@@ -211,14 +236,14 @@ class RegistrationTest < ActionController::IntegrationTest
     get new_user_registration_path(:format => 'xml')
     assert_response :success
     assert_match %(<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<user>), response.body
-    assert_no_match(/<confirmation-token/, response.body) if DEVISE_ORM == :active_record
+    assert_no_match(/<confirmation-token/, response.body)
   end
 
   test 'a user with JSON sign up stub' do
     get new_user_registration_path(:format => 'json')
     assert_response :success
     assert_match %({"user":), response.body
-    assert_no_match(/"confirmation_token"/, response.body) if DEVISE_ORM == :active_record
+    assert_no_match(/"confirmation_token"/, response.body)
   end
 
   test 'an admin sign up with valid information in XML format should return valid response' do
@@ -247,7 +272,7 @@ class RegistrationTest < ActionController::IntegrationTest
 
   test 'a user update information with valid data in XML format should return valid response' do
     user = sign_in_as_user
-    put user_registration_path(:format => 'xml'), :user => { :current_password => '123456', :email => 'user.new@test.com' }
+    put user_registration_path(:format => 'xml'), :user => { :current_password => '12345678', :email => 'user.new@test.com' }
     assert_response :success
     assert_equal user.reload.email, 'user.new@test.com'
   end
@@ -264,5 +289,57 @@ class RegistrationTest < ActionController::IntegrationTest
     delete user_registration_path(:format => 'xml')
     assert_response :success
     assert_equal User.count, 0
+  end
+end
+
+class ReconfirmableRegistrationTest < ActionController::IntegrationTest
+  test 'a signed in admin should see a more appropriate flash message when editing his account if reconfirmable is enabled' do
+    sign_in_as_admin
+    get edit_admin_registration_path
+
+    fill_in 'email', :with => 'admin.new@example.com'
+    fill_in 'current password', :with => '123456'
+    click_button 'Update'
+
+    assert_current_url '/admin_area/home'
+    assert_contain 'but we need to verify your new email address'
+
+    assert_equal "admin.new@example.com", Admin.first.unconfirmed_email
+  end
+
+  test 'a signed in admin should not see a reconfirmation message if they did not change their password' do
+    sign_in_as_admin
+    get edit_admin_registration_path
+
+    fill_in 'password', :with => 'pas123'
+    fill_in 'password confirmation', :with => 'pas123'
+    fill_in 'current password', :with => '123456'
+    click_button 'Update'
+
+    assert_current_url '/admin_area/home'
+    assert_contain 'You updated your account successfully.'
+
+    assert Admin.first.valid_password?('pas123')
+  end
+
+  test 'a signed in admin should not see a reconfirmation message if he did not change his email, despite having an unconfirmed email' do
+    sign_in_as_admin
+
+    get edit_admin_registration_path
+    fill_in 'email', :with => 'admin.new@example.com'
+    fill_in 'current password', :with => '123456'
+    click_button 'Update'
+
+    get edit_admin_registration_path
+    fill_in 'password', :with => 'pas123'
+    fill_in 'password confirmation', :with => 'pas123'
+    fill_in 'current password', :with => '123456'
+    click_button 'Update'
+
+    assert_current_url '/admin_area/home'
+    assert_contain 'You updated your account successfully.'
+
+    assert_equal "admin.new@example.com", Admin.first.unconfirmed_email
+    assert Admin.first.valid_password?('pas123')
   end
 end

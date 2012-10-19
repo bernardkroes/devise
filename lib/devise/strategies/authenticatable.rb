@@ -6,7 +6,11 @@ module Devise
     # parameters both from params or from http authorization headers. See database_authenticatable
     # for an example.
     class Authenticatable < Base
-      attr_accessor :authentication_hash, :password
+      attr_accessor :authentication_hash, :authentication_type, :password
+
+      def store?
+        super && !mapping.to.skip_session_storage.include?(authentication_type)
+      end
 
       def valid?
         valid_for_params_auth? || valid_for_http_auth?
@@ -14,19 +18,36 @@ module Devise
 
     private
 
-      # Simply invokes valid_for_authentication? with the given block and deal with the result.
+      # Receives a resource and check if it is valid by calling valid_for_authentication?
+      # An optional block that will be triggered while validating can be optionally
+      # given as parameter. Check Devise::Models::Authenticable.valid_for_authentication?
+      # for more information.
+      #
+      # In case the resource can't be validated, it will fail with the given
+      # unauthenticated_message.
       def validate(resource, &block)
+        unless resource
+          ActiveSupport::Deprecation.warn "an empty resource was given to #{self.class.name}#validate. " \
+            "Please ensure the resource is not nil", caller
+        end
+
         result = resource && resource.valid_for_authentication?(&block)
 
         case result
-        when String, Symbol
+        when Symbol, String
+          ActiveSupport::Deprecation.warn "valid_for_authentication? should return a boolean value"
           fail!(result)
-          false
-        when TrueClass
+          return false
+        end
+
+        if result
           decorate(resource)
           true
         else
-          result
+          if resource
+            fail!(resource.unauthenticated_message)
+          end
+          false
         end
       end
 
@@ -47,7 +68,7 @@ module Devise
       #   * If all authentication keys are present;
       #
       def valid_for_http_auth?
-        http_authenticatable? && request.authorization && with_authentication_hash(http_auth_hash)
+        http_authenticatable? && request.authorization && with_authentication_hash(:http_auth, http_auth_hash)
       end
 
       # Check if this is strategy is valid for params authentication by:
@@ -58,8 +79,8 @@ module Devise
       #   * If all authentication keys are present;
       #
       def valid_for_params_auth?
-        params_authenticatable? && valid_request? &&
-          valid_params? && with_authentication_hash(params_auth_hash)
+        params_authenticatable? && valid_params_request? &&
+          valid_params? && with_authentication_hash(:params_auth, params_auth_hash)
       end
 
       # Check if the model accepts this strategy as http authenticatable.
@@ -74,8 +95,8 @@ module Devise
 
       # Extract the appropriate subhash for authentication from params.
       def params_auth_hash
-         params[scope]
-       end
+        params[scope]
+      end
 
       # Extract a hash with attributes:values from the http params.
       def http_auth_hash
@@ -83,19 +104,9 @@ module Devise
         Hash[*keys.zip(decode_credentials).flatten]
       end
 
-      # By default, a request is valid  if the controller is allowed and the VERB is POST.
-      def valid_request?
-        valid_controller? && valid_verb?
-      end
-
-      # Check if the controller is the one registered for authentication.
-      def valid_controller?
-        mapping.controllers[:sessions] == params[:controller]
-      end
-
-      # Check if it was a POST request.
-      def valid_verb?
-        request.post?
+      # By default, a request is valid if the controller set the proper env variable.
+      def valid_params_request?
+        !!env["devise.allow_params_authentication"]
       end
 
       # If the request is valid, finally check if params_auth_hash returns a hash.
@@ -111,12 +122,12 @@ module Devise
       # Helper to decode credentials from HTTP.
       def decode_credentials
         return [] unless request.authorization && request.authorization =~ /^Basic (.*)/m
-        ActiveSupport::Base64.decode64($1).split(/:/, 2)
+        Base64.decode64($1).split(/:/, 2)
       end
 
       # Sets the authentication hash and the password from params_auth_hash or http_auth_hash.
-      def with_authentication_hash(auth_values)
-        self.authentication_hash = {}
+      def with_authentication_hash(auth_type, auth_values)
+        self.authentication_hash, self.authentication_type = {}, auth_type
         self.password = auth_values[:password]
 
         parse_authentication_key_values(auth_values, authentication_keys) &&

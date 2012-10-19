@@ -1,8 +1,12 @@
+require "omniauth-facebook"
+require "omniauth-openid"
+
 # Use this hook to configure devise mailer, warden hooks and so forth. The first
 # four configuration values can also be set straight in your models.
 Devise.setup do |config|
   # ==> Mailer Configuration
-  # Configure the e-mail address which will be shown in DeviseMailer.
+  # Configure the e-mail address which will be shown in Devise::Mailer,
+  # note that it will be overwritten if you use your own mailer class with default "from" parameter.
   config.mailer_sender = "please-change-me@config-initializers-devise.com"
 
   # Configure the class responsible to send e-mails.
@@ -56,16 +60,16 @@ Devise.setup do |config|
   # ==> Configuration for :database_authenticatable
   # For bcrypt, this is the cost for hashing the password and defaults to 10. If
   # using other encryptors, it sets how many times you want the password re-encrypted.
-  config.stretches = 10
+  config.stretches = Rails.env.test? ? 1 : 10
 
   # ==> Configuration for :confirmable
   # The time you want to give your user to confirm his account. During this time
   # he will be able to access your application without confirming. Default is nil.
-  # When confirm_within is zero, the user won't be able to sign in without confirming.
+  # When allow_unconfirmed_access_for is zero, the user won't be able to sign in without confirming.
   # You can use this to let your user access some features of your application
   # without confirming the account, but blocking it after a certain period
   # (ie 2 days).
-  # config.confirm_within = 2.days
+  # config.allow_unconfirmed_access_for = 2.days
 
   # Defines which key will be used when confirming an account
   # config.confirmation_keys = [ :email ]
@@ -80,13 +84,9 @@ Devise.setup do |config|
   # If true, extends the user's remember period when remembered via cookie.
   # config.extend_remember_period = false
 
-  # If true, uses the password salt as remember token. This should be turned
-  # to false if you are not using database authenticatable.
-  config.use_salt_as_remember_token = true
-
   # ==> Configuration for :validatable
-  # Range for password length. Default is 6..128.
-  # config.password_length = 6..128
+  # Range for password length. Default is 8..128.
+  # config.password_length = 8..128
 
   # Regex to use to validate the email address
   # config.email_regexp = /^([\w\.%\+\-]+)@([\w\-]+\.)+([\w]{2,})$/i
@@ -129,24 +129,12 @@ Devise.setup do |config|
   # change their passwords.
   config.reset_password_within = 2.hours
 
-  # ==> Configuration for :encryptable
-  # Allow you to use another encryption algorithm besides bcrypt (default). You can use
-  # :sha1, :sha512 or encryptors from others authentication tools as :clearance_sha1,
-  # :authlogic_sha512 (then you should set stretches above to 20 for default behavior)
-  # and :restful_authentication_sha1 (then you should set stretches to 10, and copy
-  # REST_AUTH_SITE_KEY to pepper)
-  config.encryptor = :sha512
-
   # Setup a pepper to generate the encrypted password.
   config.pepper = "d142367154e5beacca404b1a6a4f8bc52c6fdcfa3ccc3cf8eb49f3458a688ee6ac3b9fae488432a3bfca863b8a90008368a9f3a3dfbe5a962e64b6ab8f3a3a1a"
 
   # ==> Configuration for :token_authenticatable
   # Defines name of the authentication token params key
   # config.token_authentication_key = :auth_token
-
-  # If true, authentication through token does not store user in session and needs
-  # to be supplied on each request. Useful if you are using the token as API token.
-  # config.stateless_token = false
 
   # ==> Scopes configuration
   # Turn scoped views on. Before rendering "sessions/new", it will first check for
@@ -176,8 +164,8 @@ Devise.setup do |config|
 
   # ==> OmniAuth
   config.omniauth :facebook, 'APP_ID', 'APP_SECRET', :scope => 'email,offline_access'
-  config.omniauth :open_id
-  config.omniauth :open_id, :name => 'google', :identifier => 'https://www.google.com/accounts/o8/id'
+  config.omniauth :openid
+  config.omniauth :openid, :name => 'google', :identifier => 'https://www.google.com/accounts/o8/id'
 
   # ==> Warden configuration
   # If you want to use other strategies, that are not supported by Devise, or
